@@ -10,6 +10,8 @@
 #include "websocket_logging.h"
 #include "market_analyzer.h"
 #include "trading_pairs.h"
+#include "logger.h"
+#include "config.h"
 #include <map>
 #include <mutex>
 
@@ -179,44 +181,58 @@ void onPriceUpdate(const std::string &symbol, double price)
 
 int main()
 {
-    // Initialize curl globally
-    curl_global_init(CURL_GLOBAL_ALL);
-
-    // Setup WebSocket logging with debug mode off
-    setup_lws_logging(false);
-
-    // Create vector of symbols from trading pairs
-    std::vector<std::string> tradingPairs;
-    for (const auto &pair : TRADING_PAIRS)
+    try
     {
-        tradingPairs.push_back(pair.symbol);
+        // Initialize logger
+        Logger::init();
+
+        // Load configuration
+        Config::loadFromFile("config.yaml");
+
+        // Initialize curl globally
+        curl_global_init(CURL_GLOBAL_ALL);
+
+        // Setup WebSocket logging with debug mode off
+        setup_lws_logging(false);
+
+        // Create vector of symbols from trading pairs
+        std::vector<std::string> tradingPairs;
+        for (const auto &pair : TRADING_PAIRS)
+        {
+            tradingPairs.push_back(pair.symbol);
+        }
+
+        // Initialize multi-pair trading bot
+        MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
+
+        // Start WebSocket connections for all pairs
+        std::vector<std::thread> wsThreads;
+        for (const auto &symbol : trader.getSymbols())
+        {
+            wsThreads.push_back(std::thread(runWebSocketClient, symbol));
+        }
+
+        // Trading loop
+        while (true)
+        {
+            trader.processAllPrices();
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        }
+
+        // Join all threads
+        for (auto &thread : wsThreads)
+        {
+            thread.join();
+        }
+
+        // Clean up curl
+        curl_global_cleanup();
+
+        return 0;
     }
-
-    // Initialize multi-pair trading bot
-    MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
-
-    // Start WebSocket connections for all pairs
-    std::vector<std::thread> wsThreads;
-    for (const auto &symbol : trader.getSymbols())
+    catch (const std::exception &e)
     {
-        wsThreads.push_back(std::thread(runWebSocketClient, symbol));
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     }
-
-    // Trading loop
-    while (true)
-    {
-        trader.processAllPrices();
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
-
-    // Join all threads
-    for (auto &thread : wsThreads)
-    {
-        thread.join();
-    }
-
-    // Clean up curl
-    curl_global_cleanup();
-
-    return 0;
 }

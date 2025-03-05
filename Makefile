@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -I. -I/usr/include/openssl -I/usr/include/jsoncpp
-LDFLAGS = -lcurl -lwebsockets -lssl -lcrypto -lpthread -ljsoncpp
+CXXFLAGS = -Wall -Wextra -I. -I/usr/include/openssl -I/usr/include/jsoncpp -I/usr/include/spdlog -I/usr/include/yaml-cpp
+LDFLAGS = -lcurl -lwebsockets -lssl -lcrypto -lpthread -ljsoncpp -lspdlog -lyaml-cpp -lfmt
 
 SRCS = binance_utils.cpp \
        websocket_client.cpp \
@@ -8,12 +8,16 @@ SRCS = binance_utils.cpp \
        trading_strategy.cpp \
        risk_manager.cpp \
        order_manager.cpp \
+       config.cpp \
        main.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 TARGET = trading_bot
 
-.PHONY: all clean debug
+# Add production flags
+PROD_FLAGS = -O3 -DNDEBUG -march=native
+
+.PHONY: all clean debug test install
 
 all: $(TARGET)
 
@@ -25,6 +29,13 @@ $(TARGET): $(OBJS)
 
 debug: CXXFLAGS += -g -DDEBUG
 debug: all
+
+test: $(TEST_OBJS)
+	$(CXX) $(TEST_OBJS) -o run_tests $(LDFLAGS) -lgtest -lgtest_main
+
+install: $(TARGET)
+	install -d $(DESTDIR)/usr/local/bin
+	install $(TARGET) $(DESTDIR)/usr/local/bin/
 
 clean:
 	rm -f $(OBJS) $(TARGET)

@@ -1,40 +1,66 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// Trading Parameters
-constexpr double MAX_POSITION_SIZE = 0.01; // 1% of account
-constexpr double MAX_DAILY_LOSS = 0.02;    // 2% max daily loss
-constexpr double RISK_PER_TRADE = 0.01;    // 1% risk per trade
-constexpr double MIN_CONFIDENCE = 0.7;     // Minimum signal confidence
+#include <yaml-cpp/yaml.h>
+#include <spdlog/spdlog.h>
 
-// Technical Indicators
-constexpr int RSI_PERIOD = 14;
-constexpr int EMA_PERIOD = 20;
-constexpr int MACD_FAST = 12;
-constexpr int MACD_SLOW = 26;
-constexpr int MACD_SIGNAL = 9;
-
-// Risk Management
-constexpr double STOP_LOSS_ATR_MULTIPLIER = 2.0;
-constexpr double TAKE_PROFIT_ATR_MULTIPLIER = 3.0;
-
-// Multi-pair Trading Settings
-constexpr int MAX_CONCURRENT_TRADES = 5;      // Maximum number of simultaneous positions
-constexpr double PORTFOLIO_RISK = 0.05;       // Maximum 5% portfolio risk across all positions
-constexpr double CORRELATION_THRESHOLD = 0.7; // Avoid trading highly correlated pairs
-
-// Per-Symbol Risk Adjustments
-struct SymbolRiskConfig
+class Config
 {
-    std::string symbol;
-    double riskMultiplier; // Adjust risk per symbol (1.0 is standard)
-};
+public:
+    // Trading Parameters
+    static double MAX_POSITION_SIZE; // 1% of account
+    static double MAX_DAILY_LOSS;    // 2% max daily loss
+    static double RISK_PER_TRADE;    // 1% risk per trade
+    static double MIN_CONFIDENCE;    // Minimum signal confidence
 
-const SymbolRiskConfig SYMBOL_RISKS[] = {
-    {"BTCUSDT", 1.0},
-    {"ETHUSDT", 0.8},
-    {"BNBUSDT", 0.7},
-    {"DOGEUSDT", 0.5},
-    {"ADAUSDT", 0.5}};
+    // Technical Indicators
+    static int RSI_PERIOD;
+    static int EMA_PERIOD;
+    static int MACD_FAST;
+    static int MACD_SLOW;
+    static int MACD_SIGNAL;
+
+    // Risk Management
+    static double STOP_LOSS_ATR_MULTIPLIER;
+    static double TAKE_PROFIT_ATR_MULTIPLIER;
+
+    // Multi-pair Trading Settings
+    static int MAX_CONCURRENT_TRADES;
+    static double PORTFOLIO_RISK;
+    static double CORRELATION_THRESHOLD;
+
+    // Per-Symbol Risk Adjustments
+    struct SymbolRiskConfig
+    {
+        std::string symbol;
+        double riskMultiplier;
+    };
+
+    static const std::vector<SymbolRiskConfig> SYMBOL_RISKS;
+
+    static void loadFromFile(const std::string &configPath)
+    {
+        try
+        {
+            YAML::Node config = YAML::LoadFile(configPath);
+            MAX_POSITION_SIZE = config["trading"]["max_position_size"].as<double>();
+            MAX_DAILY_LOSS = config["trading"]["max_daily_loss"].as<double>();
+            RISK_PER_TRADE = config["trading"]["risk_per_trade"].as<double>();
+            MIN_CONFIDENCE = config["trading"]["min_confidence"].as<double>();
+
+            // Load indicator settings
+            RSI_PERIOD = config["indicators"]["rsi_period"].as<int>();
+            EMA_PERIOD = config["indicators"]["ema_period"].as<int>();
+            MACD_FAST = config["indicators"]["macd_fast"].as<int>();
+            MACD_SLOW = config["indicators"]["macd_slow"].as<int>();
+            MACD_SIGNAL = config["indicators"]["macd_signal"].as<int>();
+        }
+        catch (const YAML::Exception &e)
+        {
+            spdlog::error("Failed to load config: {}", e.what());
+            throw;
+        }
+    }
+};
 
 #endif

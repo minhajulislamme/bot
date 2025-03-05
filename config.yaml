@@ -1,0 +1,12 @@
+trading:
+  max_position_size: 0.01
+  max_daily_loss: 0.02
+  risk_per_trade: 0.01
+  min_confidence: 0.7
+
+indicators:
+  rsi_period: 14
+  ema_period: 20
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
