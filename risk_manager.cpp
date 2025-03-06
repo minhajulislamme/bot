@@ -1,5 +1,6 @@
 #include "risk_manager.h"
 #include <cmath>
+#include <spdlog/spdlog.h> // Add this line
 
 RiskManager::RiskManager(double maxPositionSize, double maxDailyLoss, double riskPerTrade)
     : accountBalance(10000.0), // Default initial balance
@@ -12,6 +13,14 @@ RiskManager::RiskManager(double maxPositionSize, double maxDailyLoss, double ris
 
 bool RiskManager::canTrade([[maybe_unused]] const std::string &symbol, double price)
 {
+    // Check minimum account balance first
+    if (accountBalance < MIN_ACCOUNT_BALANCE)
+    {
+        spdlog::warn("Account balance ({:.2f} USDT) below minimum required ({:.2f} USDT)",
+                     accountBalance, MIN_ACCOUNT_BALANCE);
+        return false;
+    }
+
     // Check if we've hit daily loss limit
     if (dailyPnL < -(accountBalance * maxDailyLoss))
     {
@@ -69,4 +78,33 @@ bool RiskManager::shouldClosePosition(const std::string &symbol, double currentP
     {
         return currentPrice >= pos.stopLoss || currentPrice <= pos.takeProfit;
     }
+}
+
+void RiskManager::updateAccountBalance(double balance)
+{
+    accountBalance = balance;
+    lastBalanceUpdate = std::chrono::system_clock::now();
+}
+
+double RiskManager::getMaxPositionSizeForBalance() const
+{
+    // Calculate max position size based on account balance and config
+    return accountBalance * maxPositionSize;
+}
+
+bool RiskManager::isBalanceSufficient(double requiredAmount) const
+{
+    // First check minimum balance requirement
+    if (accountBalance < MIN_ACCOUNT_BALANCE)
+    {
+        spdlog::warn("Insufficient balance: {:.2f} USDT (minimum: {:.2f} USDT)",
+                     accountBalance, MIN_ACCOUNT_BALANCE);
+        return false;
+    }
+
+    // Keep minimum reserve (20% of balance)
+    double availableBalance = accountBalance * 0.8;
+
+    // Check if we have enough balance after reserve
+    return (availableBalance >= requiredAmount);
 }

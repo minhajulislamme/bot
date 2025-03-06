@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <chrono>
 
 class RiskManager
 {
@@ -42,6 +43,12 @@ public:
     bool isHighlyCorrelated(const std::string &symbol1, const std::string &symbol2) const;
     double getSymbolRiskMultiplier(const std::string &symbol) const;
 
+    // Add new methods
+    void updateAccountBalance(double balance);
+    double getAccountBalance() const { return accountBalance; }
+    double getMaxPositionSizeForBalance() const;
+    bool isBalanceSufficient(double requiredAmount) const;
+
 private:
     double accountBalance;
     double maxPositionSize;
@@ -55,6 +62,11 @@ private:
     static constexpr int MAX_POSITIONS = 5;
     static constexpr double MAX_TOTAL_RISK = 0.15; // 15% max total risk
     static constexpr double MAX_CORRELATION = 0.7;
+    static constexpr double MIN_ACCOUNT_BALANCE = 20.0; // Minimum required balance in USDT
+
+    // Add new member
+    std::chrono::system_clock::time_point lastBalanceUpdate;
+    static constexpr int BALANCE_UPDATE_INTERVAL = 60; // seconds
 
     void updateCorrelationMatrix();
     double calculatePairCorrelation(const std::string &symbol1, const std::string &symbol2) const;

@@ -10,3 +10,16 @@ indicators:
   macd_fast: 12
   macd_slow: 26
   macd_signal: 9
+
+balance:
+  min_required: 20.0 # Minimum balance required to trade in USDT
+  reserve_percent: 20 # Keep this percentage as reserve
+  max_position_percent: 30 # Maximum single position size as percentage
+
+telegram:
+  token: "8170894475:AAHRkjWwFa9vEXj-BnoWhsiRd_oJAjZzsxM"
+  chat_id: "874994865" # Updated with your actual chat ID
+  notifications:
+    trades: true
+    balance: true
+    errors: true

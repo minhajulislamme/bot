@@ -12,6 +12,7 @@
 #include "trading_pairs.h"
 #include "logger.h"
 #include "config.h"
+#include "telegram_notifier.h"
 #include <map>
 #include <mutex>
 
@@ -69,10 +70,32 @@ public:
         }
     }
 
+    void updateAccountBalance()
+    {
+        double balance = orderManager.getAccountBalance();
+        if (balance > 0)
+        {
+            riskManager->updateAccountBalance(balance);
+            spdlog::info("Account balance updated: ${:.2f}", balance);
+
+            // Adjust position sizes based on new balance
+            double maxPositionSize = riskManager->getMaxPositionSizeForBalance();
+            spdlog::info("Max position size: ${:.2f}", maxPositionSize);
+        }
+    }
+
     void processPrice(double price, double volume)
     {
-        // Update market analysis every 4 hours
+        // Update balance every hour
         auto now = std::chrono::system_clock::now();
+        static auto lastBalanceCheck = now;
+        if (now - lastBalanceCheck > std::chrono::hours(1))
+        {
+            updateAccountBalance();
+            lastBalanceCheck = now;
+        }
+
+        // Update market analysis every 4 hours
         if (now - lastAnalysisTime > std::chrono::hours(4))
         {
             updateMarketAnalysis();
@@ -102,15 +125,28 @@ public:
             {
                 if (riskManager->canTrade(symbol, price))
                 {
+                    // Calculate quantity first
                     double quantity = riskManager->getPositionSize(price, signal.stopLoss);
-                    if (orderManager.placeMarketOrder(symbol, "BUY", quantity,
-                                                      signal.stopLoss, signal.takeProfit))
+
+                    // Then use it for balance check
+                    double requiredBalance = price * quantity * (1.0 + 0.01); // Include margin
+
+                    if (riskManager->isBalanceSufficient(requiredBalance))
                     {
-                        inPosition = true;
-                        RiskManager::Position pos{
-                            symbol, "BUY", price, quantity,
-                            signal.stopLoss, signal.takeProfit};
-                        riskManager->updatePosition(pos);
+                        // Rest of order placement logic
+                        if (orderManager.placeMarketOrder(symbol, "BUY", quantity,
+                                                          signal.stopLoss, signal.takeProfit))
+                        {
+                            inPosition = true;
+                            RiskManager::Position pos{
+                                symbol, "BUY", price, quantity,
+                                signal.stopLoss, signal.takeProfit};
+                            riskManager->updatePosition(pos);
+                        }
+                    }
+                    else
+                    {
+                        spdlog::warn("Insufficient balance for trade on {}", symbol);
                     }
                 }
             }
@@ -242,6 +278,13 @@ int main()
     {
         Logger::init();
         Config::loadFromFile("config.yaml");
+
+        // Initialize Telegram notifications
+        TelegramNotifier::init(Config::TELEGRAM_TOKEN);
+
+        // Send test notification
+        TelegramNotifier::sendTestMessage();
+
         curl_global_init(CURL_GLOBAL_ALL);
         setup_lws_logging(false);
 
@@ -250,6 +293,9 @@ int main()
         {
             tradingPairs.push_back(pair.symbol);
         }
+
+        // Send startup notification
+        TelegramNotifier::notifyStartup(tradingPairs);
 
         MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
         std::vector<std::thread> wsThreads;
@@ -276,6 +322,7 @@ int main()
     catch (const std::exception &e)
     {
         spdlog::error("Fatal error: {}", e.what());
+        TelegramNotifier::notifyError(e.what());
         return 1;
     }
 }

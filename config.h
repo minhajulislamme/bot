@@ -38,6 +38,10 @@ public:
 
     static const std::vector<SymbolRiskConfig> SYMBOL_RISKS;
 
+    // Add Telegram configuration
+    static std::string TELEGRAM_TOKEN;   // Only declare here, don't initialize
+    static std::string TELEGRAM_CHAT_ID; // Add this line
+
     static void loadFromFile(const std::string &configPath)
     {
         try
@@ -54,6 +58,10 @@ public:
             MACD_FAST = config["indicators"]["macd_fast"].as<int>();
             MACD_SLOW = config["indicators"]["macd_slow"].as<int>();
             MACD_SIGNAL = config["indicators"]["macd_signal"].as<int>();
+
+            // Load Telegram settings
+            TELEGRAM_TOKEN = config["telegram"]["token"].as<std::string>();
+            TELEGRAM_CHAT_ID = config["telegram"]["chat_id"].as<std::string>(); // Add this line
         }
         catch (const YAML::Exception &e)
         {
@@ -62,5 +70,8 @@ public:
         }
     }
 };
+
+// Initialize static members
+// ...existing initializations...
 
 #endif

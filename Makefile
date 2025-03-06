@@ -9,15 +9,13 @@ SRCS = binance_utils.cpp \
        risk_manager.cpp \
        order_manager.cpp \
        config.cpp \
+       telegram_notifier.cpp \
        main.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 TARGET = trading_bot
 
-# Add production flags
-PROD_FLAGS = -O3 -DNDEBUG -march=native
-
-.PHONY: all clean debug test install
+.PHONY: all clean
 
 all: $(TARGET)
 
@@ -26,16 +24,6 @@ $(TARGET): $(OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-debug: CXXFLAGS += -g -DDEBUG
-debug: all
-
-test: $(TEST_OBJS)
-	$(CXX) $(TEST_OBJS) -o run_tests $(LDFLAGS) -lgtest -lgtest_main
-
-install: $(TARGET)
-	install -d $(DESTDIR)/usr/local/bin
-	install $(TARGET) $(DESTDIR)/usr/local/bin/
 
 clean:
 	rm -f $(OBJS) $(TARGET)

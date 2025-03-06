@@ -198,7 +198,7 @@ void MarketAnalyzer::updateCrossMarketCorrelations(const std::map<std::string, s
 }
 
 // Add missing helper method for correlation calculation
-double MarketAnalyzer::calculateCorrelation(const std::vector<double> &x, const std::vector<double> &y)
+double MarketAnalyzer::calculateCorrelation(const std::vector<double> &x, const std::vector<double> &y) const
 {
     double sum_x = 0.0, sum_y = 0.0;
     double sum_xy = 0.0;
@@ -219,4 +219,51 @@ double MarketAnalyzer::calculateCorrelation(const std::vector<double> &x, const 
         return 0;
 
     return (n * sum_xy - sum_x * sum_y) / denominator;
+}
+
+double MarketAnalyzer::getAverageVolume() const
+{
+    auto it = marketStats.find("avgVolume");
+    return it != marketStats.end() ? it->second : 0.0;
+}
+
+double MarketAnalyzer::getAverageRange() const
+{
+    if (historicalData.empty())
+        return 0.0;
+    double sum = 0.0;
+    for (const auto &data : historicalData)
+    {
+        sum += (data.high - data.low);
+    }
+    return sum / historicalData.size();
+}
+
+double MarketAnalyzer::getVolatility() const
+{
+    auto it = marketStats.find("volatility");
+    return it != marketStats.end() ? it->second : 0.0;
+}
+
+bool MarketAnalyzer::isOverbought() const
+{
+    auto it = marketStats.find("rsi");
+    return it != marketStats.end() && it->second > 70.0;
+}
+
+bool MarketAnalyzer::isOversold() const
+{
+    auto it = marketStats.find("rsi");
+    return it != marketStats.end() && it->second < 30.0;
+}
+
+bool MarketAnalyzer::isMarketOverextended() const
+{
+    return getVolatility() > OVEREXTENDED_THRESHOLD;
+}
+
+double MarketAnalyzer::getPairCorrelation(const std::string &pair1, const std::string &pair2) const
+{
+    auto it = crossMarketCorrelations.find({pair1, pair2});
+    return it != crossMarketCorrelations.end() ? it->second : 0.0;
 }

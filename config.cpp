@@ -19,6 +19,9 @@ int Config::MAX_CONCURRENT_TRADES = 5;
 double Config::PORTFOLIO_RISK = 0.05;
 double Config::CORRELATION_THRESHOLD = 0.7;
 
+std::string Config::TELEGRAM_TOKEN = "";
+std::string Config::TELEGRAM_CHAT_ID = ""; // Add this line
+
 const std::vector<Config::SymbolRiskConfig> Config::SYMBOL_RISKS = {
     {"BTCUSDT", 1.0},
     {"ETHUSDT", 0.8},

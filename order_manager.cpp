@@ -4,6 +4,8 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <json/json.h>     // Add this for Json::Value
+#include <spdlog/spdlog.h> // Add this for spdlog
 
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userp)
 {
@@ -98,8 +100,60 @@ bool OrderManager::cancelOrder([[maybe_unused]] const std::string &symbol, [[may
 
 double OrderManager::getAccountBalance()
 {
-    // TODO: Implement balance retrieval
-    return 10000.0; // Default value
+    std::string endpoint = "/fapi/v2/balance";
+    std::string timestamp = getTimestamp();
+
+    std::string queryString = "timestamp=" + timestamp;
+    std::string signature = hmac_sha256(apiSecret, queryString);
+    queryString += "&signature=" + signature;
+
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return 0.0;
+
+    std::string response;
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, ("X-MBX-APIKEY: " + apiKey).c_str());
+
+    std::string url = "https://testnet.binancefuture.com" + endpoint + "?" + queryString;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
+    {
+        spdlog::error("Failed to get account balance: {}", curl_easy_strerror(res));
+        return 0.0;
+    }
+
+    try
+    {
+        Json::Value root;
+        Json::Reader reader;
+        if (reader.parse(response, root) && root.isArray())
+        {
+            for (const auto &asset : root)
+            {
+                if (asset["asset"].asString() == "USDT")
+                {
+                    return std::stod(asset["balance"].asString());
+                }
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Error parsing balance response: {}", e.what());
+    }
+
+    return 0.0;
 }
 
 void OrderManager::updateOpenOrders()
