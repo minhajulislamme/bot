@@ -16,8 +16,8 @@ double currentPrice = 0.0;
 
 // List of fallback WebSocket servers to try
 const std::vector<std::string> WS_SERVERS = {
-    "stream.binancefuture.com",   // Primary server
-    "fstream.binancefuture.com"   // Fallback server
+    "stream.binancefuture.com", // Primary server
+    "fstream.binancefuture.com" // Fallback server
 };
 
 // Connection state tracking
@@ -193,7 +193,7 @@ void runWebSocketClient(const std::string &symbol)
                 if (conn_data.should_reconnect)
                 {
                     conn_data.connection_attempts++;
-                    
+
                     // If we've tried the current server too many times, try the next one
                     if (conn_data.connection_attempts >= 3)
                     {
@@ -202,11 +202,11 @@ void runWebSocketClient(const std::string &symbol)
                         conn_data.connection_attempts = 0;
                         spdlog::warn("Switching to WebSocket server: {}", conn_data.current_server);
                     }
-                    
-                    std::cout << "Attempting to reconnect WebSocket... (attempt " 
-                              << conn_data.connection_attempts + 1 << " to " 
+
+                    std::cout << "Attempting to reconnect WebSocket... (attempt "
+                              << conn_data.connection_attempts + 1 << " to "
                               << conn_data.current_server << ")" << std::endl;
-                    
+
                     std::this_thread::sleep_for(std::chrono::seconds(5)); // Wait before reconnecting
 
                     wsi = connect_websocket(context, symbol);
