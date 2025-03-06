@@ -5,3 +5,23 @@ sudo ./install_service.sh
 ./crontab_setup.sh
 sudo systemctl status binance-bot.service
 journalctl -u binance-bot.service -f
+
+sudo systemctl stop binance-bot.service
+sudo systemctl disable binance-bot.service
+sudo rm /etc/systemd/system/binance-bot.service
+sudo systemctl daemon-reload
+sudo rm -rf /root/bot/
+
+sudo systemctl stop binance-bot.service
+sudo systemctl disable binance-bot.service
+sudo rm /etc/systemd/system/binance-bot.service
+sudo systemctl daemon-reload
+sudo rm -rf /root/bot/ # remove bot directory
+sudo rm -rf /root/bot/logs/ # remove logs directory
+
+chmod +x *.sh
+
+./check_system_health.sh
+
+./make_test_executable.sh
+./run_system_test.sh

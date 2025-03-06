@@ -6,13 +6,19 @@
 #include <thread>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <algorithm> // Add this for std::transform
-#include <cctype>    // Add this for tolower
-#include <unistd.h>  // Add this for access()
+#include <algorithm>
+#include <cctype>
+#include <unistd.h>
 #include <spdlog/spdlog.h>
-#include "data_health_monitor.h" // Add this include
+#include "data_health_monitor.h"
 
 double currentPrice = 0.0;
+
+// List of fallback WebSocket servers to try
+const std::vector<std::string> WS_SERVERS = {
+    "stream.binancefuture.com",   // Primary server
+    "fstream.binancefuture.com"   // Fallback server
+};
 
 // Connection state tracking
 static struct connection_data
@@ -20,6 +26,9 @@ static struct connection_data
     bool interrupted;
     bool should_reconnect;
     std::string symbol;
+    std::string current_server;
+    int server_index;
+    int connection_attempts;
 } conn_data;
 
 class WebSocketException : public std::runtime_error
@@ -103,8 +112,9 @@ struct lws *connect_websocket(struct lws_context *context, const std::string &sy
                    { return std::tolower(c); });
     std::string path = "/ws/" + lowercaseSymbol + "@trade";
 
+    // Use the current server from the connection data
     ccinfo.context = context;
-    ccinfo.address = "stream.binancefuture.com"; // Using testnet would be "stream.binancefuture.com"
+    ccinfo.address = conn_data.current_server.c_str();
     ccinfo.port = 443;
     ccinfo.path = path.c_str();
     ccinfo.host = ccinfo.address;
@@ -114,6 +124,7 @@ struct lws *connect_websocket(struct lws_context *context, const std::string &sy
     ccinfo.userdata = nullptr;
     ccinfo.ssl_connection = LCCSCF_USE_SSL;
 
+    spdlog::info("Connecting to WebSocket server: {}, path: {}", conn_data.current_server, path);
     return lws_client_connect_via_info(&ccinfo);
 }
 
@@ -129,6 +140,9 @@ void runWebSocketClient(const std::string &symbol)
         conn_data.symbol = symbol;
         conn_data.interrupted = false;
         conn_data.should_reconnect = false;
+        conn_data.server_index = 0;
+        conn_data.current_server = WS_SERVERS[0];
+        conn_data.connection_attempts = 0;
 
         struct lws_context_creation_info info = {};
         struct lws_context *context;
@@ -178,13 +192,28 @@ void runWebSocketClient(const std::string &symbol)
             {
                 if (conn_data.should_reconnect)
                 {
-                    std::cout << "Attempting to reconnect WebSocket..." << std::endl;
+                    conn_data.connection_attempts++;
+                    
+                    // If we've tried the current server too many times, try the next one
+                    if (conn_data.connection_attempts >= 3)
+                    {
+                        conn_data.server_index = (conn_data.server_index + 1) % WS_SERVERS.size();
+                        conn_data.current_server = WS_SERVERS[conn_data.server_index];
+                        conn_data.connection_attempts = 0;
+                        spdlog::warn("Switching to WebSocket server: {}", conn_data.current_server);
+                    }
+                    
+                    std::cout << "Attempting to reconnect WebSocket... (attempt " 
+                              << conn_data.connection_attempts + 1 << " to " 
+                              << conn_data.current_server << ")" << std::endl;
+                    
                     std::this_thread::sleep_for(std::chrono::seconds(5)); // Wait before reconnecting
 
                     wsi = connect_websocket(context, symbol);
                     if (wsi)
                     {
                         conn_data.interrupted = false;
+                        spdlog::info("Successfully reconnected to {}", conn_data.current_server);
                     }
                     else
                     {

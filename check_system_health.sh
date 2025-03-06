@@ -11,6 +11,8 @@ if pgrep -f "trading_bot" > /dev/null; then
     echo "✅ Trading bot process is running"
 else
     echo "❌ Trading bot process is NOT running!"
+    echo "   Run './run.sh' to start the bot manually or"
+    echo "   'sudo systemctl start binance-bot.service' if installed as a service"
 fi
 
 # Check for recent log entries
@@ -41,11 +43,12 @@ if [ $? -eq 0 ]; then
     echo "✅ Binance API is accessible"
 else
     echo "❌ Cannot access Binance API!"
+    echo "   Run './test_ssl.sh' for more details"
 fi
 
 # Check WebSocket connectivity
 echo -e "\nTesting WebSocket server..."
-timeout 5 bash -c "curl -s --include --no-buffer -N \
+timeout 10 bash -c "curl -s --include --no-buffer -N \
     -H 'Connection: Upgrade' \
     -H 'Upgrade: websocket' \
     -H 'Host: stream.binancefuture.com' \
@@ -58,6 +61,23 @@ if [ $? -eq 0 ]; then
     echo "✅ WebSocket server is accessible"
 else
     echo "❌ Cannot access WebSocket server!"
+    echo "   Run './test_websocket.sh' for detailed WebSocket diagnostics"
+    
+    # Try alternate endpoint
+    echo "   Trying alternate WebSocket endpoint..."
+    timeout 10 bash -c "curl -s --include --no-buffer -N \
+        -H 'Connection: Upgrade' \
+        -H 'Upgrade: websocket' \
+        -H 'Host: fstream.binancefuture.com' \
+        -H 'Origin: https://fstream.binancefuture.com' \
+        -H 'Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==' \
+        -H 'Sec-WebSocket-Version: 13' \
+        'wss://fstream.binancefuture.com/ws' 2>&1 | grep -q 'HTTP/1.1 101'"
+    
+    if [ $? -eq 0 ]; then
+        echo "   ✅ Alternate WebSocket endpoint is accessible"
+        echo "   Consider updating the websocket_client.cpp file to use fstream.binancefuture.com"
+    fi
 fi
 
 echo -e "\nSystem health check completed."
