@@ -15,6 +15,7 @@
 #include "telegram_notifier.h"
 #include <map>
 #include <mutex>
+#include <iomanip> // Add this for std::setprecision
 
 // Binance Futures Testnet
 const std::string API_HOST = "https://testnet.binancefuture.com";
@@ -45,6 +46,51 @@ private:
     bool inPosition;
     MarketAnalyzer marketAnalyzer;
     std::chrono::system_clock::time_point lastAnalysisTime;
+    double lastKnownBalance;
+    std::chrono::system_clock::time_point lastBalanceCheck;
+    static constexpr int BALANCE_CHECK_INTERVAL = 60;       // seconds
+    std::map<std::string, RiskManager::Position> positions; // Add this member
+
+    bool checkAndUpdateBalance()
+    {
+        double currentBalance = orderManager.getAccountBalance();
+        if (currentBalance <= 0)
+        {
+            TelegramNotifier::notifyError("Failed to fetch account balance");
+            return false;
+        }
+
+        if (currentBalance != lastKnownBalance)
+        {
+            std::stringstream ss;
+            ss << "💰 Balance Change Detected\n"
+               << "Previous: $" << std::fixed << std::setprecision(2) << lastKnownBalance << "\n"
+               << "Current: $" << currentBalance << "\n"
+               << "Change: " << (currentBalance > lastKnownBalance ? "+" : "")
+               << std::setprecision(2) << (currentBalance - lastKnownBalance);
+            TelegramNotifier::sendMessage(ss.str());
+
+            lastKnownBalance = currentBalance;
+            riskManager->updateAccountBalance(currentBalance);
+        }
+        return true;
+    }
+
+    bool canPlaceTrade(double price, double quantity)
+    {
+        if (std::chrono::system_clock::now() - lastBalanceCheck >
+            std::chrono::seconds(BALANCE_CHECK_INTERVAL))
+        {
+            if (!checkAndUpdateBalance())
+            {
+                return false;
+            }
+            lastBalanceCheck = std::chrono::system_clock::now();
+        }
+
+        double requiredBalance = price * quantity * (1.0 + 0.01); // Include margin
+        return riskManager->isBalanceSufficient(requiredBalance);
+    }
 
 public:
     TradingBot(const std::string &sym, const std::string &apiKey, const std::string &apiSecret, std::shared_ptr<RiskManager> globalRiskManager)
@@ -53,8 +99,17 @@ public:
           orderManager(apiKey, apiSecret),
           symbol(sym),
           lastPrice(0),
-          inPosition(false)
+          inPosition(false),
+          lastKnownBalance(0)
     {
+        // Initialize with current balance
+        lastKnownBalance = orderManager.getAccountBalance();
+        lastBalanceCheck = std::chrono::system_clock::now();
+        riskManager->updateAccountBalance(lastKnownBalance);
+
+        // Notify initial balance
+        TelegramNotifier::notifyBalance(lastKnownBalance);
+
         // Initial market analysis
         updateMarketAnalysis();
     }
@@ -125,28 +180,34 @@ public:
             {
                 if (riskManager->canTrade(symbol, price))
                 {
-                    // Calculate quantity first
                     double quantity = riskManager->getPositionSize(price, signal.stopLoss);
 
-                    // Then use it for balance check
-                    double requiredBalance = price * quantity * (1.0 + 0.01); // Include margin
-
-                    if (riskManager->isBalanceSufficient(requiredBalance))
+                    if (canPlaceTrade(price, quantity))
                     {
-                        // Rest of order placement logic
-                        if (orderManager.placeMarketOrder(symbol, "BUY", quantity,
-                                                          signal.stopLoss, signal.takeProfit))
+                        double requiredBalance = price * quantity * (1.0 + 0.01);
+
+                        if (riskManager->isBalanceSufficient(requiredBalance))
                         {
-                            inPosition = true;
-                            RiskManager::Position pos{
-                                symbol, "BUY", price, quantity,
-                                signal.stopLoss, signal.takeProfit};
-                            riskManager->updatePosition(pos);
+                            if (placeTradeWithNotification("BUY", quantity, price,
+                                                           signal.stopLoss, signal.takeProfit))
+                            {
+                                inPosition = true;
+                                RiskManager::Position pos{
+                                    symbol, "BUY", price, quantity,
+                                    signal.stopLoss, signal.takeProfit,
+                                    std::chrono::system_clock::now() // Add entry time
+                                };
+                                riskManager->updatePosition(pos);
+                            }
+                        }
+                        else
+                        {
+                            spdlog::warn("Insufficient balance for trade on {}", symbol);
                         }
                     }
                     else
                     {
-                        spdlog::warn("Insufficient balance for trade on {}", symbol);
+                        spdlog::warn("Insufficient balance or balance check failed for {} trade", symbol);
                     }
                 }
             }
@@ -174,11 +235,59 @@ private:
     {
         if (inPosition)
         {
-            orderManager.placeMarketOrder(symbol, "SELL",
-                                          riskManager->getPositionQuantity(symbol), 0, 0);
-            riskManager->closePosition(symbol);
-            inPosition = false;
+            double quantity = riskManager->getPositionQuantity(symbol);
+            double currentPrice = lastPrice; // Use latest price
+
+            if (placeTradeWithNotification("SELL", quantity, currentPrice, 0, 0))
+            {
+                auto it = positions.find(symbol);
+                if (it != positions.end())
+                {
+                    double pnl = (currentPrice - it->second.entryPrice) * quantity;
+
+                    std::stringstream ss;
+                    ss << "💰 Position Closed\n"
+                       << "PnL: " << (pnl >= 0 ? "+" : "") << std::fixed
+                       << std::setprecision(2) << "$" << pnl << "\n"
+                       << "Hold Time: " << calculateHoldTime(it->second.entryTime);
+                    TelegramNotifier::sendMessage(ss.str());
+                }
+                riskManager->closePosition(symbol);
+                inPosition = false;
+            }
         }
+    }
+
+    bool placeTradeWithNotification(const std::string &side, double quantity, double price,
+                                    double stopLoss, double takeProfit)
+    {
+        if (orderManager.placeMarketOrder(symbol, side, quantity, stopLoss, takeProfit))
+        {
+            TelegramNotifier::notifyTrade(symbol, side, price, quantity);
+
+            std::stringstream ss;
+            ss << "📊 Trade Details:\n"
+               << "Stop Loss: $" << std::fixed << std::setprecision(2) << stopLoss << "\n"
+               << "Take Profit: $" << takeProfit << "\n"
+               << "Potential Loss: $" << (abs(price - stopLoss) * quantity) << "\n"
+               << "Potential Profit: $" << (abs(price - takeProfit) * quantity);
+            TelegramNotifier::sendMessage(ss.str());
+
+            return true;
+        }
+        return false;
+    }
+
+    std::string calculateHoldTime(const std::chrono::system_clock::time_point &entryTime)
+    {
+        auto now = std::chrono::system_clock::now();
+        auto duration = now - entryTime;
+        auto hours = std::chrono::duration_cast<std::chrono::hours>(duration).count();
+        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration).count() % 60;
+
+        std::stringstream ss;
+        ss << hours << "h " << minutes << "m";
+        return ss.str();
     }
 };
 
@@ -279,7 +388,24 @@ int main()
         Logger::init();
         Config::loadFromFile("config.yaml");
 
-        // Initialize Telegram notifications
+        // Initialize OrderManager to get initial balance
+        OrderManager initialBalanceCheck(API_KEY, API_SECRET);
+        double totalBalance = initialBalanceCheck.getInitialBalance();
+
+        if (totalBalance <= 0)
+        {
+            spdlog::error("Failed to get initial balance from Binance");
+            return 1;
+        }
+
+        // Set initial balance and calculate trading limits
+        Config::INITIAL_BALANCE = totalBalance;
+        Config::TRADING_BALANCE = totalBalance * 0.1; // Use 10% for trading
+
+        spdlog::info("Total Balance: ${:.2f}", totalBalance);
+        spdlog::info("Trading Balance (10%): ${:.2f}", Config::TRADING_BALANCE);
+
+        // Initialize Telegram and rest of the code...
         TelegramNotifier::init(Config::TELEGRAM_TOKEN);
 
         // Send test notification

@@ -41,11 +41,17 @@ void TelegramNotifier::notifyTrade(const std::string &symbol, const std::string 
                                    double price, double quantity)
 {
     std::stringstream ss;
-    ss << "🤖 Trade Alert\n"
+    double totalValue = price * quantity;
+    std::time_t now = std::time(nullptr); // Add this line for time
+
+    ss << "🤖 Trade Executed\n"
+       << "━━━━━━━━━━━━━━━━━━━━━\n"
        << "Symbol: " << symbol << "\n"
-       << "Side: " << side << "\n"
+       << "Action: " << (side == "BUY" ? "🟢 " : "🔴 ") << side << "\n"
        << "Price: $" << std::fixed << std::setprecision(2) << price << "\n"
-       << "Quantity: " << quantity;
+       << "Quantity: " << std::setprecision(6) << quantity << "\n"
+       << "Total Value: $" << std::setprecision(2) << totalValue << "\n"
+       << "Time: " << std::put_time(std::localtime(&now), "%H:%M:%S");
     sendMessage(ss.str());
 }
 
@@ -53,7 +59,15 @@ void TelegramNotifier::notifyBalance(double balance)
 {
     std::stringstream ss;
     ss << "💰 Balance Update\n"
-       << "Current Balance: $" << std::fixed << std::setprecision(2) << balance;
+       << "━━━━━━━━━━━━━━━━━━━━━\n"
+       << "Total Balance: $" << std::fixed << std::setprecision(2) << balance << "\n"
+       << "Trading Balance (10%): $" << (balance * 0.1) << "\n"
+       << "Reserved (90%): $" << (balance * 0.9) << "\n"
+       << "Min Required: $" << (balance * 0.01) << " (1%)\n\n"
+       << "Trading Capacity:\n"
+       << "• Max Position: $" << (balance * 0.1 * Config::MAX_POSITION_SIZE) << "\n"
+       << "• Risk Per Trade: $" << (balance * 0.1 * Config::RISK_PER_TRADE) << "\n"
+       << "• Daily Loss Limit: $" << (balance * Config::MAX_DAILY_LOSS);
     sendMessage(ss.str());
 }
 
@@ -69,20 +83,31 @@ void TelegramNotifier::notifyStartup(const std::vector<std::string> &tradingPair
     std::time_t now = std::time(nullptr);
     ss << "🚀 Binance Trading Bot Started\n"
        << "━━━━━━━━━━━━━━━━━━━━━\n"
-       << "📅 Date: " << std::put_time(std::localtime(&now), "%Y-%m-%d") << "\n"
-       << "⏰ Time: " << std::put_time(std::localtime(&now), "%H:%M:%S") << "\n"
-       << "💱 Active Trading Pairs:\n";
+       << "📅 " << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") << "\n\n"
+       << "💰 Account Balance\n"
+       << "Total: $" << std::fixed << std::setprecision(2) << Config::INITIAL_BALANCE << "\n"
+       << "Trading (10%): $" << (Config::INITIAL_BALANCE * 0.1) << "\n"
+       << "Reserved (90%): $" << (Config::INITIAL_BALANCE * 0.9) << "\n"
+       << "Min Required: $" << (Config::INITIAL_BALANCE * 0.01) << "\n\n"
+       << "📊 Risk Parameters\n"
+       << "• Max Position: " << (Config::MAX_POSITION_SIZE * 100) << "% ($"
+       << (Config::INITIAL_BALANCE * 0.1 * Config::MAX_POSITION_SIZE) << ")\n"
+       << "• Risk per Trade: " << (Config::RISK_PER_TRADE * 100) << "% ($"
+       << (Config::INITIAL_BALANCE * 0.1 * Config::RISK_PER_TRADE) << ")\n"
+       << "• Max Daily Loss: " << (Config::MAX_DAILY_LOSS * 100) << "% ($"
+       << (Config::INITIAL_BALANCE * Config::MAX_DAILY_LOSS) << ")\n\n"
+       << "💱 Trading Pairs:\n";
 
     for (const auto &pair : tradingPairs)
     {
         ss << "• " << pair << "\n";
     }
 
-    ss << "\n📊 Trading Settings:\n"
-       << "• Max Positions: " << Config::MAX_CONCURRENT_TRADES << "\n"
-       << "• Risk per Trade: " << (Config::RISK_PER_TRADE * 100) << "%\n"
-       << "• Min Balance: $" << Config::MIN_CONFIDENCE << "\n"
-       << "\n💡 Bot Status: Online and monitoring markets\n"
+    ss << "\n🔄 Trading Strategy\n"
+       << "• Time Frame: 1h\n"
+       << "• Indicators: RSI, MACD, EMA\n"
+       << "• Max Concurrent Trades: " << Config::MAX_CONCURRENT_TRADES << "\n"
+       << "\n💡 Status: Online and monitoring markets\n"
        << "━━━━━━━━━━━━━━━━━━━━━";
 
     sendMessage(ss.str());

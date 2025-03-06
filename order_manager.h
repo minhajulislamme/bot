@@ -25,6 +25,7 @@ public:
     bool cancelOrder(const std::string &symbol, const std::string &orderId);
     double getAccountBalance();
     void updateOpenOrders();
+    double getInitialBalance();
 
 private:
     std::string apiKey;

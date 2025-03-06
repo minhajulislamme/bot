@@ -21,6 +21,7 @@ public:
         double quantity;
         double stopLoss;
         double takeProfit;
+        std::chrono::system_clock::time_point entryTime; // Add this field
     };
 
     bool canTrade(const std::string &symbol, double price);
@@ -49,6 +50,9 @@ public:
     double getMaxPositionSizeForBalance() const;
     bool isBalanceSufficient(double requiredAmount) const;
 
+    double getMinAccountBalance() const { return minAccountBalance; }
+    double getMinBalancePercentage() const { return MIN_BALANCE_PERCENTAGE; }
+
 private:
     double accountBalance;
     double maxPositionSize;
@@ -67,6 +71,12 @@ private:
     // Add new member
     std::chrono::system_clock::time_point lastBalanceUpdate;
     static constexpr int BALANCE_UPDATE_INTERVAL = 60; // seconds
+
+    // Update constants for balance management
+    static constexpr double RESERVE_PERCENT = 0.90;        // Keep 90% as reserve, use 10% for trading
+    static constexpr double MIN_BALANCE_PERCENTAGE = 0.01; // 1% minimum balance requirement
+
+    double minAccountBalance; // Will be calculated from initial balance
 
     void updateCorrelationMatrix();
     double calculatePairCorrelation(const std::string &symbol1, const std::string &symbol2) const;

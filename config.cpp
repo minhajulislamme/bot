@@ -22,6 +22,10 @@ double Config::CORRELATION_THRESHOLD = 0.7;
 std::string Config::TELEGRAM_TOKEN = "";
 std::string Config::TELEGRAM_CHAT_ID = ""; // Add this line
 
+// Add INITIAL_BALANCE definition
+double Config::INITIAL_BALANCE = 0.0;
+double Config::TRADING_BALANCE = 0.0;
+
 const std::vector<Config::SymbolRiskConfig> Config::SYMBOL_RISKS = {
     {"BTCUSDT", 1.0},
     {"ETHUSDT", 0.8},

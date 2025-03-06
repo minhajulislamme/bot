@@ -139,11 +139,19 @@ double OrderManager::getAccountBalance()
         Json::Reader reader;
         if (reader.parse(response, root) && root.isArray())
         {
+            double totalBalance = 0.0;
+            double availableBalance = 0.0;
+
             for (const auto &asset : root)
             {
                 if (asset["asset"].asString() == "USDT")
                 {
-                    return std::stod(asset["balance"].asString());
+                    totalBalance = std::stod(asset["balance"].asString());
+                    availableBalance = std::stod(asset["availableBalance"].asString());
+
+                    spdlog::info("Account Balance - Total: ${:.2f}, Available: ${:.2f}",
+                                 totalBalance, availableBalance);
+                    return availableBalance; // Use available balance for trading
                 }
             }
         }
@@ -153,6 +161,63 @@ double OrderManager::getAccountBalance()
         spdlog::error("Error parsing balance response: {}", e.what());
     }
 
+    return 0.0;
+}
+
+double OrderManager::getInitialBalance()
+{
+    std::string endpoint = "/fapi/v2/balance";
+    std::string timestamp = getTimestamp();
+    std::string queryString = "timestamp=" + timestamp;
+    std::string signature = hmac_sha256(apiSecret, queryString);
+    queryString += "&signature=" + signature;
+
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return 0.0;
+
+    std::string response;
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, ("X-MBX-APIKEY: " + apiKey).c_str());
+    std::string url = "https://testnet.binancefuture.com" + endpoint + "?" + queryString;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
+    {
+        spdlog::error("Failed to get initial balance: {}", curl_easy_strerror(res));
+        return 0.0;
+    }
+
+    try
+    {
+        Json::Value root;
+        Json::Reader reader;
+        if (reader.parse(response, root) && root.isArray())
+        {
+            for (const auto &asset : root)
+            {
+                if (asset["asset"].asString() == "USDT")
+                {
+                    double balance = std::stod(asset["balance"].asString());
+                    spdlog::info("Initial Account Balance: ${:.2f}", balance);
+                    return balance;
+                }
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Error parsing initial balance response: {}", e.what());
+    }
     return 0.0;
 }
 

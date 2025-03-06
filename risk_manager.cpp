@@ -9,6 +9,7 @@ RiskManager::RiskManager(double maxPositionSize, double maxDailyLoss, double ris
       riskPerTrade(riskPerTrade),
       dailyPnL(0.0)
 {
+    minAccountBalance = accountBalance * MIN_BALANCE_PERCENTAGE;
 }
 
 bool RiskManager::canTrade([[maybe_unused]] const std::string &symbol, double price)
@@ -83,6 +84,7 @@ bool RiskManager::shouldClosePosition(const std::string &symbol, double currentP
 void RiskManager::updateAccountBalance(double balance)
 {
     accountBalance = balance;
+    minAccountBalance = balance * MIN_BALANCE_PERCENTAGE; // Update minimum balance
     lastBalanceUpdate = std::chrono::system_clock::now();
 }
 
@@ -94,17 +96,16 @@ double RiskManager::getMaxPositionSizeForBalance() const
 
 bool RiskManager::isBalanceSufficient(double requiredAmount) const
 {
-    // First check minimum balance requirement
-    if (accountBalance < MIN_ACCOUNT_BALANCE)
+    // Calculate available balance (10% of total balance)
+    double availableBalance = accountBalance * (1.0 - RESERVE_PERCENT);
+
+    if (accountBalance < minAccountBalance)
     {
-        spdlog::warn("Insufficient balance: {:.2f} USDT (minimum: {:.2f} USDT)",
-                     accountBalance, MIN_ACCOUNT_BALANCE);
+        spdlog::warn("Balance (${:.2f}) below minimum required ${:.2f} ({:.1f}%)",
+                     accountBalance, minAccountBalance, MIN_BALANCE_PERCENTAGE * 100);
         return false;
     }
 
-    // Keep minimum reserve (20% of balance)
-    double availableBalance = accountBalance * 0.8;
-
-    // Check if we have enough balance after reserve
+    // Check if we have enough balance from the trading portion
     return (availableBalance >= requiredAmount);
 }

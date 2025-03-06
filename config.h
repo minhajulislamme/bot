@@ -42,6 +42,10 @@ public:
     static std::string TELEGRAM_TOKEN;   // Only declare here, don't initialize
     static std::string TELEGRAM_CHAT_ID; // Add this line
 
+    // Add initial balance configuration
+    static double INITIAL_BALANCE; // Total account balance
+    static double TRADING_BALANCE; // 10% of initial balance for trading
+
     static void loadFromFile(const std::string &configPath)
     {
         try
