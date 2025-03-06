@@ -10,6 +10,8 @@ SRCS = binance_utils.cpp \
        order_manager.cpp \
        config.cpp \
        telegram_notifier.cpp \
+       data_health_monitor.cpp \
+       status_checker.cpp \
        main.cpp
 
 OBJS = $(SRCS:.cpp=.o)

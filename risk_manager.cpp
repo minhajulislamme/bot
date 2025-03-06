@@ -109,3 +109,13 @@ bool RiskManager::isBalanceSufficient(double requiredAmount) const
     // Check if we have enough balance from the trading portion
     return (availableBalance >= requiredAmount);
 }
+
+double RiskManager::getTotalExposure() const
+{
+    double totalExposure = 0.0;
+    for (const auto &position : positions)
+    {
+        totalExposure += position.second.quantity * position.second.entryPrice;
+    }
+    return totalExposure;
+}

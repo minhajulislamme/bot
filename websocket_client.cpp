@@ -10,6 +10,7 @@
 #include <cctype>    // Add this for tolower
 #include <unistd.h>  // Add this for access()
 #include <spdlog/spdlog.h>
+#include "data_health_monitor.h" // Add this include
 
 double currentPrice = 0.0;
 
@@ -56,6 +57,10 @@ static int websocketCallback(struct lws *wsi, enum lws_callback_reasons reason,
             auto end = msg.find("\"", start);
             std::string priceStr = msg.substr(start, end - start);
             currentPrice = std::stod(priceStr);
+
+            // Record data point for health monitoring
+            DataHealthMonitor::recordDataPoint(conn_data.symbol, currentPrice);
+
             std::cout << "Current Price: " << currentPrice << std::endl;
         }
     }

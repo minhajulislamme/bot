@@ -1,5 +1,6 @@
 #include "order_manager.h"
 #include "binance_utils.h"
+#include "telegram_notifier.h" // Add this include
 #include <curl/curl.h>
 #include <iostream>
 #include <iomanip>
@@ -55,12 +56,48 @@ bool OrderManager::placeMarketOrder(const std::string &symbol,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
+    // Log before API call
+    spdlog::info("Sending market order: {} {} {} at market price", side, ss.str(), symbol);
+
     CURLcode res = curl_easy_perform(curl);
     bool success = (res == CURLE_OK);
 
     if (success)
     {
-        std::cout << "Market order placed: " << response << std::endl;
+        // Parse the response JSON to extract order details
+        try
+        {
+            Json::Value root;
+            Json::Reader reader;
+            if (reader.parse(response, root))
+            {
+                std::string orderId = root["orderId"].asString();
+                std::string status = root["status"].asString();
+
+                spdlog::info("Market order placed successfully: OrderID={}, Status={}", orderId, status);
+
+                // Add detailed order logging
+                std::stringstream details;
+                details << "📊 Order Details (" << orderId << "):\n"
+                        << "Status: " << status << "\n";
+
+                if (root.isMember("avgPrice"))
+                {
+                    details << "Avg Price: " << root["avgPrice"].asString() << "\n";
+                }
+
+                if (root.isMember("executedQty"))
+                {
+                    details << "Executed Qty: " << root["executedQty"].asString() << "\n";
+                }
+
+                spdlog::debug(details.str());
+            }
+        }
+        catch (const std::exception &e)
+        {
+            spdlog::warn("Error parsing order response: {}", e.what());
+        }
 
         // Place stop loss order
         if (stopLoss > 0)
@@ -84,7 +121,9 @@ bool OrderManager::placeMarketOrder(const std::string &symbol,
     }
     else
     {
-        std::cerr << "Failed to place market order: " << curl_easy_strerror(res) << std::endl;
+        std::string errorMsg = "Failed to place market order: " + std::string(curl_easy_strerror(res));
+        spdlog::error(errorMsg);
+        TelegramNotifier::notifyError(errorMsg);
     }
 
     curl_slist_free_all(headers);

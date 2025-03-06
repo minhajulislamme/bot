@@ -13,6 +13,8 @@
 #include "logger.h"
 #include "config.h"
 #include "telegram_notifier.h"
+#include "data_health_monitor.h" // Add this include
+#include "status_checker.h"      // Add this include
 #include <map>
 #include <mutex>
 #include <iomanip> // Add this for std::setprecision
@@ -406,6 +408,10 @@ int main()
         Logger::init();
         Config::loadFromFile("config.yaml");
 
+        // Initialize health monitoring systems
+        DataHealthMonitor::init();
+        StatusChecker::init();
+
         // Initialize OrderManager to get initial balance
         OrderManager initialBalanceCheck(API_KEY, API_SECRET);
         double totalBalance = initialBalanceCheck.getInitialBalance();
@@ -438,6 +444,9 @@ int main()
             tradingPairs.push_back(pair.symbol);
         }
 
+        // Configure status checker with trading pairs
+        StatusChecker::setSupportedSymbols(tradingPairs);
+
         // Send startup notification
         TelegramNotifier::notifyStartup(tradingPairs);
 
@@ -449,9 +458,25 @@ int main()
             wsThreads.push_back(std::thread(runWebSocketClient, symbol));
         }
 
+        // Schedule data health reporting after 30 minutes
+        auto nextDataHealthReport = std::chrono::system_clock::now() + std::chrono::minutes(30);
+
         while (true)
         {
             trader.processAllPrices();
+
+            // Check if it's time for periodic status update
+            StatusChecker::checkAndSendPeriodicStatus();
+
+            // Check if it's time for data health report
+            auto now = std::chrono::system_clock::now();
+            if (now >= nextDataHealthReport)
+            {
+                DataHealthMonitor::reportDataHealth();
+                // Schedule next report in 6 hours
+                nextDataHealthReport = now + std::chrono::hours(6);
+            }
+
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
 
