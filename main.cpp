@@ -37,7 +37,7 @@ class TradingBot
 {
 private:
     TradingStrategy strategy;
-    RiskManager riskManager;
+    std::shared_ptr<RiskManager> riskManager;
     OrderManager orderManager;
     std::string symbol;
     double lastPrice;
@@ -46,9 +46,9 @@ private:
     std::chrono::system_clock::time_point lastAnalysisTime;
 
 public:
-    TradingBot(const std::string &sym, const std::string &apiKey, const std::string &apiSecret)
-        : strategy(14, 20, 26),          // RSI, EMA, MACD periods
-          riskManager(0.01, 0.02, 0.01), // maxPosition, maxDailyLoss, riskPerTrade
+    TradingBot(const std::string &sym, const std::string &apiKey, const std::string &apiSecret, std::shared_ptr<RiskManager> globalRiskManager)
+        : strategy(14, 20, 26), // RSI, EMA, MACD periods
+          riskManager(globalRiskManager),
           orderManager(apiKey, apiSecret),
           symbol(sym),
           lastPrice(0),
@@ -89,7 +89,7 @@ public:
         TradingSignal signal = strategy.analyzeWithMarketContext(price, volume);
 
         // Check if we need to close any positions
-        if (inPosition && riskManager.shouldClosePosition(symbol, price))
+        if (inPosition && riskManager->shouldClosePosition(symbol, price))
         {
             closeAllPositions();
             return;
@@ -100,9 +100,9 @@ public:
         {
             if (signal.type == TradingSignal::BUY && !inPosition)
             {
-                if (riskManager.canTrade(symbol, price))
+                if (riskManager->canTrade(symbol, price))
                 {
-                    double quantity = riskManager.getPositionSize(price, signal.stopLoss);
+                    double quantity = riskManager->getPositionSize(price, signal.stopLoss);
                     if (orderManager.placeMarketOrder(symbol, "BUY", quantity,
                                                       signal.stopLoss, signal.takeProfit))
                     {
@@ -110,7 +110,7 @@ public:
                         RiskManager::Position pos{
                             symbol, "BUY", price, quantity,
                             signal.stopLoss, signal.takeProfit};
-                        riskManager.updatePosition(pos);
+                        riskManager->updatePosition(pos);
                     }
                 }
             }
@@ -123,14 +123,24 @@ public:
         lastPrice = price;
     }
 
+    bool hasOpenPosition() const
+    {
+        return inPosition;
+    }
+
+    MarketAnalyzer &getMarketAnalyzer()
+    {
+        return marketAnalyzer;
+    }
+
 private:
     void closeAllPositions()
     {
         if (inPosition)
         {
             orderManager.placeMarketOrder(symbol, "SELL",
-                                          riskManager.getPositionQuantity(symbol), 0, 0);
-            riskManager.closePosition(symbol);
+                                          riskManager->getPositionQuantity(symbol), 0, 0);
+            riskManager->closePosition(symbol);
             inPosition = false;
         }
     }
@@ -141,98 +151,88 @@ class MultiPairTradingBot
 private:
     std::map<std::string, std::unique_ptr<TradingBot>> bots;
     std::vector<std::string> symbols;
+    std::shared_ptr<RiskManager> globalRiskManager;
+    std::mutex tradingMutex;
+    static constexpr int MAX_SIMULTANEOUS_TRADES = 5;
+    std::map<std::string, std::chrono::system_clock::time_point> lastTradeTime;
 
 public:
     MultiPairTradingBot(const std::vector<std::string> &tradingPairs,
                         const std::string &apiKey,
                         const std::string &apiSecret)
+        : globalRiskManager(std::make_shared<RiskManager>(0.01, 0.02, 0.01))
     {
         for (const auto &pair : tradingPairs)
         {
             symbols.push_back(pair);
-            bots[pair] = std::make_unique<TradingBot>(pair, apiKey, apiSecret);
+            bots[pair] = std::make_unique<TradingBot>(pair, apiKey, apiSecret, globalRiskManager);
+            lastTradeTime[pair] = std::chrono::system_clock::now();
         }
     }
 
     void processAllPrices()
     {
-        std::lock_guard<std::mutex> lock(pricesMutex);
+        std::lock_guard<std::mutex> lock(tradingMutex);
+
+        updateGlobalMarketContext();
+
+        int activePositions = countActivePositions();
+
+        std::lock_guard<std::mutex> priceLock(pricesMutex);
         for (const auto &pair : currentPrices)
         {
             if (bots.find(pair.first) != bots.end())
             {
-                bots[pair.first]->processPrice(pair.second, 0);
+                // Check cooldown period
+                auto now = std::chrono::system_clock::now();
+
+                // Load configuration
+                Config::loadFromFile("config.yaml");
+
+                // Initialize curl globally
+                curl_global_init(CURL_GLOBAL_ALL);
+
+                // Setup WebSocket logging with debug mode off
+                setup_lws_logging(false);
+
+                // Create vector of symbols from trading pairs
+                std::vector<std::string> tradingPairs;
+                for (const auto &pair : TRADING_PAIRS)
+                {
+                    tradingPairs.push_back(pair.symbol);
+                }
+
+                // Initialize multi-pair trading bot
+                MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
+
+                // Start WebSocket connections for all pairs
+                std::vector<std::thread> wsThreads;
+                for (const auto &symbol : trader.getSymbols())
+                {
+                    wsThreads.push_back(std::thread(runWebSocketClient, symbol));
+                }
+
+                // Trading loop
+                while (true)
+                {
+                    trader.processAllPrices();
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                }
+
+                // Join all threads
+                for (auto &thread : wsThreads)
+                {
+                    thread.join();
+                }
+
+                // Clean up curl
+                curl_global_cleanup();
+
+                return 0;
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Error: " << e.what() << std::endl;
+                return 1;
             }
         }
-    }
-
-    const std::vector<std::string> &getSymbols() const
-    {
-        return symbols;
-    }
-};
-
-// Update WebSocket callback to handle multiple symbols
-void onPriceUpdate(const std::string &symbol, double price)
-{
-    std::lock_guard<std::mutex> lock(pricesMutex);
-    currentPrices[symbol] = price;
-}
-
-int main()
-{
-    try
-    {
-        // Initialize logger
-        Logger::init();
-
-        // Load configuration
-        Config::loadFromFile("config.yaml");
-
-        // Initialize curl globally
-        curl_global_init(CURL_GLOBAL_ALL);
-
-        // Setup WebSocket logging with debug mode off
-        setup_lws_logging(false);
-
-        // Create vector of symbols from trading pairs
-        std::vector<std::string> tradingPairs;
-        for (const auto &pair : TRADING_PAIRS)
-        {
-            tradingPairs.push_back(pair.symbol);
-        }
-
-        // Initialize multi-pair trading bot
-        MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
-
-        // Start WebSocket connections for all pairs
-        std::vector<std::thread> wsThreads;
-        for (const auto &symbol : trader.getSymbols())
-        {
-            wsThreads.push_back(std::thread(runWebSocketClient, symbol));
-        }
-
-        // Trading loop
-        while (true)
-        {
-            trader.processAllPrices();
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-        }
-
-        // Join all threads
-        for (auto &thread : wsThreads)
-        {
-            thread.join();
-        }
-
-        // Clean up curl
-        curl_global_cleanup();
-
-        return 0;
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
-}

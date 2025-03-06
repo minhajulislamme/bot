@@ -50,6 +50,15 @@ private:
     double dailyPnL;
     std::map<std::string, Position> positions;
     std::map<std::string, std::vector<double>> priceHistory;
+    std::map<std::pair<std::string, std::string>, double> correlationMatrix;
+
+    static constexpr int MAX_POSITIONS = 5;
+    static constexpr double MAX_TOTAL_RISK = 0.15; // 15% max total risk
+    static constexpr double MAX_CORRELATION = 0.7;
+
+    void updateCorrelationMatrix();
+    double calculatePairCorrelation(const std::string &symbol1, const std::string &symbol2) const;
+    bool checkPositionLimits(const std::string &symbol) const;
     double calculateCorrelation(const std::vector<double> &prices1,
                                 const std::vector<double> &prices2) const;
 };

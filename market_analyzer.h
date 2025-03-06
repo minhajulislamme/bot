@@ -40,9 +40,16 @@ public:
     bool isOversold() const;
     double getMarketSentiment() const; // -1 to 1 (bearish to bullish)
 
+    const std::vector<MarketData> &getHistoricalData() const { return historicalData; }
+    void updateCrossMarketCorrelations(const std::map<std::string, std::vector<MarketData>> &allData);
+    double getPairCorrelation(const std::string &pair1, const std::string &pair2) const;
+    bool isMarketOverextended() const;
+
 private:
     std::vector<MarketData> historicalData;
     std::map<std::string, double> marketStats;
+    std::map<std::pair<std::string, std::string>, double> crossMarketCorrelations;
+    static constexpr double OVEREXTENDED_THRESHOLD = 2.0;
 
     void calculateStatistics();
     void identifyPatterns();
