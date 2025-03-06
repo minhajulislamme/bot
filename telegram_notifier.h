@@ -10,7 +10,7 @@ class TelegramNotifier
 {
 public:
     static void init(const std::string &token);
-    static void sendMessage(const std::string &message);
+    static bool sendMessage(const std::string &message); // Changed return type to bool
     static void notifyTrade(const std::string &symbol, const std::string &side,
                             double price, double quantity);
     static void notifyBalance(double balance);
@@ -22,6 +22,7 @@ private:
     static std::string botToken;
     static const std::string API_URL;
     static bool sendRequest(const std::string &method, const std::string &params);
+    static size_t writeCallback(void *contents, size_t size, size_t nmemb, std::string *s);
 };
 
 #endif

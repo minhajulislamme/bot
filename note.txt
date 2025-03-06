@@ -1,0 +1,7 @@
+chmod +x setup.sh run.sh install_service.sh monitor.sh crontab_setup.sh
+./setup.sh
+sudo ./install_service.sh
+./crontab_setup.sh
+./crontab_setup.sh
+sudo systemctl status binance-bot.service
+journalctl -u binance-bot.service -f

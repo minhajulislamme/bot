@@ -11,18 +11,19 @@ void TelegramNotifier::init(const std::string &token)
     botToken = token;
 }
 
-void TelegramNotifier::sendMessage(const std::string &message)
+// Changed return type to bool
+bool TelegramNotifier::sendMessage(const std::string &message)
 {
     CURL *curl = curl_easy_init();
     if (!curl)
-        return;
+        return false;
 
     // Use proper chat ID from config
     char *escaped_text = curl_easy_escape(curl, message.c_str(), 0);
     if (!escaped_text)
     {
         curl_easy_cleanup(curl);
-        return;
+        return false;
     }
 
     std::string params = "chat_id=" + Config::TELEGRAM_CHAT_ID + "&text=" + escaped_text;
@@ -35,24 +36,44 @@ void TelegramNotifier::sendMessage(const std::string &message)
 
     curl_free(escaped_text);
     curl_easy_cleanup(curl);
+    return success; // Return success status
 }
 
 void TelegramNotifier::notifyTrade(const std::string &symbol, const std::string &side,
                                    double price, double quantity)
 {
-    std::stringstream ss;
-    double totalValue = price * quantity;
-    std::time_t now = std::time(nullptr); // Add this line for time
+    try
+    {
+        std::stringstream ss;
+        double totalValue = price * quantity;
+        std::time_t now = std::time(nullptr);
 
-    ss << "🤖 Trade Executed\n"
-       << "━━━━━━━━━━━━━━━━━━━━━\n"
-       << "Symbol: " << symbol << "\n"
-       << "Action: " << (side == "BUY" ? "🟢 " : "🔴 ") << side << "\n"
-       << "Price: $" << std::fixed << std::setprecision(2) << price << "\n"
-       << "Quantity: " << std::setprecision(6) << quantity << "\n"
-       << "Total Value: $" << std::setprecision(2) << totalValue << "\n"
-       << "Time: " << std::put_time(std::localtime(&now), "%H:%M:%S");
-    sendMessage(ss.str());
+        ss << "🤖 Trade Executed\n"
+           << "━━━━━━━━━━━━━━━━━━━━━\n"
+           << "Symbol: " << symbol << "\n"
+           << "Action: " << (side == "BUY" ? "🟢 " : "🔴 ") << side << "\n"
+           << "Price: $" << std::fixed << std::setprecision(2) << price << "\n"
+           << "Quantity: " << std::setprecision(6) << quantity << "\n"
+           << "Total Value: $" << std::setprecision(2) << totalValue << "\n"
+           << "Time: " << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") << "\n"
+           << "Strategy: RSI, MACD, EMA";
+
+        spdlog::info("Sending trade notification for {}: {} @ ${:.2f}", symbol, side, price);
+        bool sent = sendMessage(ss.str());
+
+        if (sent)
+        {
+            spdlog::info("Trade notification sent successfully");
+        }
+        else
+        {
+            spdlog::error("Failed to send trade notification");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Error while sending trade notification: {}", e.what());
+    }
 }
 
 void TelegramNotifier::notifyBalance(double balance)
@@ -139,6 +160,10 @@ bool TelegramNotifier::sendRequest(const std::string &method, const std::string 
     // Add debug logging
     spdlog::debug("Sending Telegram request: {}", url);
 
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
     CURLcode res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
 
@@ -149,6 +174,21 @@ bool TelegramNotifier::sendRequest(const std::string &method, const std::string 
         return false;
     }
 
-    spdlog::debug("Telegram notification sent successfully");
+    spdlog::debug("Telegram API response: {}", response);
     return true;
+}
+
+// Add callback for curl response
+size_t TelegramNotifier::writeCallback(void *contents, size_t size, size_t nmemb, std::string *s)
+{
+    size_t newLength = size * nmemb;
+    try
+    {
+        s->append((char *)contents, newLength);
+        return newLength;
+    }
+    catch (std::bad_alloc &e)
+    {
+        return 0;
+    }
 }

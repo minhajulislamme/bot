@@ -263,18 +263,36 @@ private:
     {
         if (orderManager.placeMarketOrder(symbol, side, quantity, stopLoss, takeProfit))
         {
+            // Log the trade execution
+            spdlog::info("Trade executed: {} {} {} at ${:.2f}", side, quantity, symbol, price);
+
+            // Send trade notification
             TelegramNotifier::notifyTrade(symbol, side, price, quantity);
 
+            // Calculate risk metrics
+            double potentialLoss = abs(price - stopLoss) * quantity;
+            double potentialProfit = abs(price - takeProfit) * quantity;
+            double riskRewardRatio = potentialProfit / (potentialLoss > 0 ? potentialLoss : 1);
+
+            // Send trade details notification
             std::stringstream ss;
             ss << "📊 Trade Details:\n"
+               << "━━━━━━━━━━━━━━━━━━━━━\n"
+               << "Symbol: " << symbol << "\n"
                << "Stop Loss: $" << std::fixed << std::setprecision(2) << stopLoss << "\n"
                << "Take Profit: $" << takeProfit << "\n"
-               << "Potential Loss: $" << (abs(price - stopLoss) * quantity) << "\n"
-               << "Potential Profit: $" << (abs(price - takeProfit) * quantity);
+               << "Potential Loss: $" << potentialLoss << "\n"
+               << "Potential Profit: $" << potentialProfit << "\n"
+               << "Risk/Reward: " << std::setprecision(2) << riskRewardRatio << "\n"
+               << "Account Balance: $" << std::setprecision(2) << lastKnownBalance;
             TelegramNotifier::sendMessage(ss.str());
 
             return true;
         }
+
+        // Log and notify failure
+        spdlog::error("Failed to place {} order for {} {}", side, quantity, symbol);
+        TelegramNotifier::notifyError("Failed to place " + side + " order for " + symbol);
         return false;
     }
 
