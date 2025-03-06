@@ -54,6 +54,7 @@ private:
     void calculateStatistics();
     void identifyPatterns();
     void analyzeTrend();
+    double calculateCorrelation(const std::vector<double> &x, const std::vector<double> &y);
 };
 
 #endif

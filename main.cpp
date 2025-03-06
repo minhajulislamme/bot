@@ -156,6 +156,33 @@ private:
     static constexpr int MAX_SIMULTANEOUS_TRADES = 5;
     std::map<std::string, std::chrono::system_clock::time_point> lastTradeTime;
 
+    void updateGlobalMarketContext()
+    {
+        std::map<std::string, std::vector<MarketData>> allData;
+        for (const auto &bot : bots)
+        {
+            allData[bot.first] = bot.second->getMarketAnalyzer().getHistoricalData();
+        }
+
+        for (auto &bot : bots)
+        {
+            bot.second->getMarketAnalyzer().updateCrossMarketCorrelations(allData);
+        }
+    }
+
+    int countActivePositions() const
+    {
+        int count = 0;
+        for (const auto &bot : bots)
+        {
+            if (bot.second->hasOpenPosition())
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
 public:
     MultiPairTradingBot(const std::vector<std::string> &tradingPairs,
                         const std::string &apiKey,
@@ -170,6 +197,11 @@ public:
         }
     }
 
+    const std::vector<std::string> &getSymbols() const
+    {
+        return symbols;
+    }
+
     void processAllPrices()
     {
         std::lock_guard<std::mutex> lock(tradingMutex);
@@ -178,6 +210,12 @@ public:
 
         int activePositions = countActivePositions();
 
+        if (activePositions >= MAX_SIMULTANEOUS_TRADES)
+        {
+            spdlog::info("Maximum concurrent positions ({}) reached", MAX_SIMULTANEOUS_TRADES);
+            return;
+        }
+
         std::lock_guard<std::mutex> priceLock(pricesMutex);
         for (const auto &pair : currentPrices)
         {
@@ -185,54 +223,59 @@ public:
             {
                 // Check cooldown period
                 auto now = std::chrono::system_clock::now();
+                auto lastTrade = lastTradeTime[pair.first];
 
-                // Load configuration
-                Config::loadFromFile("config.yaml");
-
-                // Initialize curl globally
-                curl_global_init(CURL_GLOBAL_ALL);
-
-                // Setup WebSocket logging with debug mode off
-                setup_lws_logging(false);
-
-                // Create vector of symbols from trading pairs
-                std::vector<std::string> tradingPairs;
-                for (const auto &pair : TRADING_PAIRS)
+                // Add minimum time between trades (5 minutes)
+                if (now - lastTrade > std::chrono::minutes(5))
                 {
-                    tradingPairs.push_back(pair.symbol);
+                    bots[pair.first]->processPrice(pair.second, 0);
+                    lastTradeTime[pair.first] = now;
                 }
-
-                // Initialize multi-pair trading bot
-                MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
-
-                // Start WebSocket connections for all pairs
-                std::vector<std::thread> wsThreads;
-                for (const auto &symbol : trader.getSymbols())
-                {
-                    wsThreads.push_back(std::thread(runWebSocketClient, symbol));
-                }
-
-                // Trading loop
-                while (true)
-                {
-                    trader.processAllPrices();
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
-                }
-
-                // Join all threads
-                for (auto &thread : wsThreads)
-                {
-                    thread.join();
-                }
-
-                // Clean up curl
-                curl_global_cleanup();
-
-                return 0;
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "Error: " << e.what() << std::endl;
-                return 1;
             }
         }
+    }
+};
+
+int main()
+{
+    try
+    {
+        Logger::init();
+        Config::loadFromFile("config.yaml");
+        curl_global_init(CURL_GLOBAL_ALL);
+        setup_lws_logging(false);
+
+        std::vector<std::string> tradingPairs;
+        for (const auto &pair : TRADING_PAIRS)
+        {
+            tradingPairs.push_back(pair.symbol);
+        }
+
+        MultiPairTradingBot trader(tradingPairs, API_KEY, API_SECRET);
+        std::vector<std::thread> wsThreads;
+
+        for (const auto &symbol : trader.getSymbols())
+        {
+            wsThreads.push_back(std::thread(runWebSocketClient, symbol));
+        }
+
+        while (true)
+        {
+            trader.processAllPrices();
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        }
+
+        for (auto &thread : wsThreads)
+        {
+            thread.join();
+        }
+
+        curl_global_cleanup();
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        spdlog::error("Fatal error: {}", e.what());
+        return 1;
+    }
+}

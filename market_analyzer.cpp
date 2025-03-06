@@ -165,3 +165,58 @@ double MarketAnalyzer::getResistanceLevel() const
     auto it = marketStats.find("resistance");
     return it != marketStats.end() ? it->second : 0.0;
 }
+
+void MarketAnalyzer::updateCrossMarketCorrelations(const std::map<std::string, std::vector<MarketData>> &allData)
+{
+    // Clear existing correlations
+    crossMarketCorrelations.clear();
+
+    // Calculate correlations between all pairs
+    for (auto it1 = allData.begin(); it1 != allData.end(); ++it1)
+    {
+        for (auto it2 = std::next(it1); it2 != allData.end(); ++it2)
+        {
+            // Extract closing prices for correlation calculation
+            std::vector<double> prices1, prices2;
+            size_t minSize = std::min(it1->second.size(), it2->second.size());
+
+            for (size_t i = 0; i < minSize; ++i)
+            {
+                prices1.push_back(it1->second[i].close);
+                prices2.push_back(it2->second[i].close);
+            }
+
+            // Calculate correlation if we have enough data points
+            if (prices1.size() >= 2)
+            {
+                double correlation = calculateCorrelation(prices1, prices2);
+                crossMarketCorrelations[{it1->first, it2->first}] = correlation;
+                crossMarketCorrelations[{it2->first, it1->first}] = correlation;
+            }
+        }
+    }
+}
+
+// Add missing helper method for correlation calculation
+double MarketAnalyzer::calculateCorrelation(const std::vector<double> &x, const std::vector<double> &y)
+{
+    double sum_x = 0.0, sum_y = 0.0;
+    double sum_xy = 0.0;
+    double sum_x2 = 0.0, sum_y2 = 0.0;
+    size_t n = x.size();
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        sum_x += x[i];
+        sum_y += y[i];
+        sum_xy += x[i] * y[i];
+        sum_x2 += x[i] * x[i];
+        sum_y2 += y[i] * y[i];
+    }
+
+    double denominator = sqrt((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y));
+    if (denominator == 0)
+        return 0;
+
+    return (n * sum_xy - sum_x * sum_y) / denominator;
+}
